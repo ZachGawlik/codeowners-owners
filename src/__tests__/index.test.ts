@@ -1,80 +1,85 @@
-import { markdownToSnippet } from '../index.js';
-import { readdirSync } from 'fs';
-import { readFile } from 'fs/promises';
-import path from 'path';
+import { buildCodeownersMap } from '../index';
 
-const __dirname = path.dirname(new URL(import.meta.url).pathname);
-const root = path.join(__dirname, 'fixtures');
+/** Full version has comment explaining the intended effect of different patterns https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#example-of-a-codeowners-file */
+const githubDocsExample = `
+# This is a comment.
 
-describe('Markdown to snippet', () => {
-  describe('Successful conversions', () => {
-    const fixtureFilenames = readdirSync(root);
-    const inputs = fixtureFilenames.filter((f) => f.includes('.md')).sort();
-    const outputs = fixtureFilenames.filter((f) => f.includes('.json')).sort();
+*.js    @js-owner #This is an inline comment.
 
-    if (inputs.length !== outputs.length) {
-      throw new Error(
-        'Each test fixture input .md file must have corresponding .json file'
-      );
-    }
+*.go docs@example.com
 
-    inputs.map((inputFile, index) => {
-      test(`Fixture ${inputFile}`, async () => {
-        const outputFile = outputs[index];
-        if (
-          outputFile.slice(0, -1 * '.json'.length) !==
-          inputFile.slice(0, -1 * '.md'.length)
-        ) {
-          throw new Error(
-            `Mismatched test input ${inputFile} to output ${outputs[index]}`
-          );
-        }
+*.txt @octo-org/octocats
 
-        const outputContent = await readFile(
-          path.join(root, outputFile),
-          'utf8'
-        );
-        const res = await markdownToSnippet(path.join(root, inputFile));
-        expect(res).toEqual(outputContent);
+/build/logs/ @doctocat
+
+
+docs/*  docs@example.com
+# Strangely the above format only matches files in the root /docs folder
+# While the below matches any apps directory, even nested ones
+apps/ @doctocat
+
+/docs/ @doctocat
+
+/scripts/ @doctocat @octocat
+**/logs @octocat
+
+/apps/ @octocat
+/apps/github
+`;
+
+describe('buildCodeownersMap', () => {
+  describe('Successful match', () => {
+    test('Behaves according to GitHub official doc example', () => {
+      const githubFiles = `
+      ./.eslintrc.js
+      ./main.js
+      ./main.go
+      ./deeply/nested/main.go
+      ./example.txt
+
+      ./builds/logs/1.txt
+
+      ./docs/doc-site.js
+      ./docs/nested/nested-doc.md
+
+      ./apps/search.js
+      ./apps/deeply/nested/index.js
+      ./apps/github/github-cli.js
+
+      ./scripts/shared.js
+
+      ./deeply/nested/apps/my-nested-app.js
+      ./deeply/nested/logs/log2.txt
+      ./nested/docs/README.md
+      ./nested/docs/nested-again/file.md
+      `;
+      expect(buildCodeownersMap(githubDocsExample, githubFiles)).toEqual({
+        UNOWNED: [
+          'apps/github/github-cli.js',
+          'nested/docs/README.md',
+          'nested/docs/nested-again/file.md',
+        ],
+        '@js-owner': ['.eslintrc.js', 'main.js'],
+        'docs@example.com': ['main.go', 'deeply/nested/main.go'],
+        '@octo-org/octocats': ['example.txt'],
+        '@doctocat': [
+          'docs/doc-site.js',
+          'docs/nested/nested-doc.md',
+          'scripts/shared.js',
+          'deeply/nested/apps/my-nested-app.js',
+        ],
+        '@octocat': [
+          'builds/logs/1.txt',
+          'apps/search.js',
+          'apps/deeply/nested/index.js',
+          'scripts/shared.js',
+          'deeply/nested/logs/log2.txt',
+        ],
       });
     });
   });
 
   describe('Errors', () => {
-    const errorFile = (filename: string) =>
-      path.join(__dirname, 'error-fixtures', filename);
-    test('Input file does not exist', async () => {
-      await expect(() =>
-        markdownToSnippet(errorFile('nonsense-non-existing-md-file.md'))
-      ).rejects.toThrowErrorMatchingInlineSnapshot(`"File does not exist"`);
-    });
-    test('Duplicated heading', async () => {
-      await expect(() =>
-        markdownToSnippet(errorFile('duplicated-heading.md'))
-      ).rejects.toThrowErrorMatchingInlineSnapshot(
-        `"Found duplicate heading Use Ref. Two snippets with the same name are impossible for VSCode's snippet format"`
-      );
-    });
-    test('Duplicated scopes, one global', async () => {
-      await expect(() =>
-        markdownToSnippet(errorFile('duplicated-scopes-global.md'))
-      ).rejects.toThrowErrorMatchingInlineSnapshot(
-        `"Prefix usr is defined both globally and for scopes typescript, typescriptreact"`
-      );
-    });
-    test('Duplicated scopes, named', async () => {
-      await expect(() =>
-        markdownToSnippet(errorFile('duplicated-scopes-named.md'))
-      ).rejects.toThrowErrorMatchingInlineSnapshot(
-        `"Prefix usr is defined multiple times for scope typescript, typescriptreact"`
-      );
-    });
-    test('Duplicated scopes, multi-def', async () => {
-      await expect(() =>
-        markdownToSnippet(errorFile('duplicated-scopes-multi-def.md'))
-      ).rejects.toThrowErrorMatchingInlineSnapshot(
-        `"Prefix usr is defined multiple times for scope typescript, typescriptreact"`
-      );
-    });
+    // TODO:
   });
 });

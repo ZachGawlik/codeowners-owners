@@ -11,6 +11,4 @@ export class KnownError extends Error {
 
 export class FileDoesNotExist extends KnownError {}
 
-export class MarkdownParsingError extends KnownError {}
-
 export class UserInputError extends KnownError {}
