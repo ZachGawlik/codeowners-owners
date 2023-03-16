@@ -1,5 +1,0 @@
-## Setup
-
-```
-pnpm install
-```
